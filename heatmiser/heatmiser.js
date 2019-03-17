@@ -1,14 +1,14 @@
-var exec = require('child_process').exec;
-var express = require('express');
-var app = express();
+const exec = require('child_process').exec;
+const express = require('express');
+const app     = express();
 
-var data = {
-    targetHeatingCoolingState: 1,
-    targetTemperature: 20,
-    targetRelativeHumidity: 30,
-    currentHeatingCoolingState: 1,
-    currentTemperature: 19,
-    currentRelativeHumidity: 30
+const data = {
+  targetHeatingCoolingState:  1,
+  targetTemperature:          20,
+  targetRelativeHumidity:     30,
+  currentHeatingCoolingState: 1,
+  currentTemperature:         19,
+  currentRelativeHumidity:    30,
 };
 
 plCmd = '~/heatmiser-wifi/bin/heatmiser_json.pl';
@@ -36,9 +36,9 @@ app
 })
 
 .get('/targetTemperature/:temperature', function (req, res, next) { //Set Temperature
-  var heatOn = {"heating":{"target":19}};
+  const heatOn           = { 'heating': { 'target': 19 } };
   data.targetTemperature = parseFloat(req.params.temperature);
-  heatOn.heating.target = data.targetTemperature;
+  heatOn.heating.target  = data.targetTemperature;
   sendMessage(heatOn);
   res.sendStatus(200);
   console.log('set temp to ', req.params.temperature);
@@ -46,7 +46,7 @@ app
 
 .get('/targetHeatingCoolingState/:state', function (req, res, next) { //Set target state
 
-  var runMode = { "runmode":"heating" };
+  const runMode = { 'runmode': 'heating' };
   if (req.params.state == 0) {
     runMode.runmode = "frost";
   }
@@ -74,8 +74,8 @@ function sendMessage(message) {
    });
 }
 
-var server = app.listen(4321, function () {
-  var host = server.address().address;
-  var port = server.address().port;
+const server = app.listen(4321, function () {
+  const host = server.address().address;
+  const port = server.address().port;
   console.log('Heatmiser API listening at', host, port);
 });

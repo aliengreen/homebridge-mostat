@@ -1,287 +1,353 @@
-var Service, Characteristic;
-var request = require("request");
+let Service,
+    Characteristic;
+const _       = require('lodash');
+const request = require('request');
+const moment  = require('moment');
+const qs      = require('querystring');
 
-module.exports = function(homebridge){
-  Service = homebridge.hap.Service;
+module.exports = function (homebridge) {
+  Service        = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
-  homebridge.registerAccessory("homebridge-thermostat", "Thermostat", Thermostat);
+  homebridge.registerAccessory('homebridge-mostat', 'mostat', Thermostat);
 };
 
 function Thermostat(log, config) {
-	this.log = log;
+  this.log = log;
 
-  this.name = config.name;
-  this.manufacturer = config.manufacturer || 'HTTP Manufacturer';
-  this.model = config.model || 'homebridge-thermostat';
-  this.serial = config.serial || 'HTTP Serial Number';
+  this.access_token = config['access_token'];
+  this.device_uuid  = config['device_uuid'];
+  this.name         = config['name'];
 
-  this.apiroute = config.apiroute
-  this.username = config.username || null;
-	this.password = config.password || null;
-  this.timeout = config.timeout || 5000;
-  this.http_method = config.http_method || 'GET';
+  this.mostat_cache = {};
 
-  this.currentHumidity = config.currentHumidity || false;
-  this.targetHumidity = config.targetHumidity || false;
-  this.temperatureDisplayUnits = config.temperatureDisplayUnits || 0;
-	this.maxTemp = config.maxTemp || 30;
-	this.minTemp = config.minTemp || 15;
-  this.targetRelativeHumidity = 90;
-  this.currentRelativeHumidity = 90;
-  this.targetTemperature = 25;
-	this.currentTemperature = 20;
+  this.manufacturer = 'AlienGreen';
+  this.model        = 'Mostat';
+  this.serial       = this.device_uuid;
+
+  this.apiroute = 'https://app.aliengreen.ge/api';
+
+  this.currentHumidity = true;
+  this.targetHumidity  = false;
+
+  this.temperatureDisplayUnits   = 0;
+  this.maxTemp                   = 30;
+  this.minTemp                   = 5;
+  this.minStep                   = 0.5;
+  this.targetRelativeHumidity    = 90;
+  this.currentRelativeHumidity   = 90;
+  this.targetTemperature         = 25;
+  this.currentTemperature        = 20;
   this.targetHeatingCoolingState = 3;
-	this.heatingCoolingState = 1;
-
-  if(this.username != null && this.password != null){
-    this.auth = {
-      user : this.username,
-      pass : this.password
-    };
-  }
+  this.heatingCoolingState       = 1;
 
   this.log(this.name, this.apiroute);
 
-	this.service = new Service.Thermostat(this.name);
+  this.service = new Service.Thermostat(this.name);
 }
 
 Thermostat.prototype = {
 
-	identify: function(callback) {
-		this.log("Identify requested!");
-		callback();
-	},
+  identify: function (callback) {
+    this.log('Identify requested!');
+    callback();
+  },
 
   _httpRequest: function (url, body, method, callback) {
-      request({
-          url: url,
-          body: body,
-          method: this.http_method,
-          timeout: this.timeout,
-          rejectUnauthorized: false,
-          auth: this.auth
+    const self = this;
+
+    if (url === 'https://app.aliengreen.ge/api/list') {
+      if (this.mostat_cache.hasOwnProperty('list_cache')) {
+        let payload = this.mostat_cache['list_cache'];
+        if (_.isString(payload)) {
+          payload = JSON.parse(payload);
+        }
+        const device = this._findDevice(payload);
+        if (moment(device.caching_date).add(10, 'seconds').isAfter(moment())) {
+          callback(null, null, payload);
+          return payload;
+        }
+      }
+    }
+
+    request({
+        url:     url,
+        body:    body,
+        method:  method,
+        timeout: 1000,
+        headers: {
+          'User-Agent':    'Mostat Homekit',
+          'Content-Type':  'application/json',
+          'Authorization': 'Bearer ' + this.access_token,
+        },
       },
-          function (error, response, body) {
-              callback(error, response, body);
-          });
+      function (error, response, body) {
+        if (url === 'https://app.aliengreen.ge/api/list') {
+          self.mostat_cache['list_cache'] = body;
+
+          if (_.isEmpty(self.user_uuid)) {
+            const payload  = JSON.parse(body);
+            const device   = self._findDevice(payload);
+            self.user_uuid = payload.uuid;
+            self.name      = device.meta.name;
+          }
+        }
+        callback(error, response, body);
+      });
   },
 
-	getCurrentHeatingCoolingState: function(callback) {
-    this.log("[+] getCurrentHeatingCoolingState from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
-    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting currentHeatingCoolingState: %s", error.message);
-  				callback(error);
-        } else {
-          var json = JSON.parse(responseBody);
-          this.log("[*] currentHeatingCoolingState: %s", json.currentHeatingCoolingState);
-          this.currentHeatingCoolingState = json.currentHeatingCoolingState;
-          callback(null, this.currentHeatingCoolingState);
-        }
-    }.bind(this));
-	},
+  _findDevice(payload) {
+    if (_.isString(payload)) {
+      payload = JSON.parse(payload);
+    }
+    let selected_device = null;
+    _.forEach(payload.devices, device => {
+      if (device.device_uuid === this.device_uuid) {
+        selected_device = device;
+        return false;
+      }
+    });
 
-  getTargetHeatingCoolingState: function(callback) {
-    this.log("[+] getTargerHeatingCoolingState from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
-    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting targetHeatingCoolingState: %s", error.message);
-  				callback(error);
-        } else {
-          var json = JSON.parse(responseBody);
-          this.log("[*] targetHeatingCoolingState: %s", json.targetHeatingCoolingState);
-          this.targetHeatingCoolingState = json.targetHeatingCoolingState;
-          callback(null, this.targetHeatingCoolingState);
-        }
-    }.bind(this));
+    return selected_device;
   },
 
-  setTargetHeatingCoolingState: function(value, callback) {
-    this.log("[+] setTargetHeatingCoolingState from %s to %s", this.targetHeatingCoolingState, value);
-    url = this.apiroute + '/targetHeatingCoolingState/' + value;
+  getCurrentHeatingCoolingState: function (callback) {
+    this.log('[+] getCurrentHeatingCoolingState from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error setting targetHeatingCoolingState: %s", error.message);
-					callback(error);
-        } else {
-          this.log("[*] Sucessfully set targetHeatingCoolingState to %s", value);
-          this.service.setCharacteristic(Characteristic.CurrentHeatingCoolingState, value);
-          callback();
-        }
+      if (error) {
+        this.log('[!] Error getting currentHeatingCoolingState: %s', error.message);
+        callback(error);
+      } else {
+        const json                      = JSON.parse(responseBody);
+        const device                    = this._findDevice(json);
+        const relay                     = device.boiler.relay;
+        const state                     = relay === 1 ? 2 : 0;
+        this.currentHeatingCoolingState = state;
+
+        this.log('[*] currentHeatingCoolingState: %s', this.currentHeatingCoolingState);
+        callback(null, this.currentHeatingCoolingState);
+      }
     }.bind(this));
   },
 
-  getCurrentTemperature: function(callback) {
-    this.log("[+] getCurrentTemperature from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
+  getTargetHeatingCoolingState: function (callback) {
+    this.log('[+] getTargerHeatingCoolingState from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting currentTemperature: %s", error.message);
-  				callback(error);
-        } else {
-  				var json = JSON.parse(responseBody);
-          this.currentTemperature = parseFloat(json.currentTemperature);
-          this.log("[*] currentTemperature: %s", json.currentTemperature);
-  				callback(null, this.currentTemperature);
-        }
+      if (error) {
+        this.log('[!] Error getting targetHeatingCoolingState: %s', error.message);
+        callback(error);
+      } else {
+        const json                      = JSON.parse(responseBody);
+        const device                    = this._findDevice(json);
+        const relay                     = device.boiler.relay;
+        const state                     = relay === 1 ? 1 : 0;
+        this.currentHeatingCoolingState = state;
+        this.log('[*] targetHeatingCoolingState: %s', this.currentHeatingCoolingState);
+        callback(null, this.targetHeatingCoolingState);
+      }
     }.bind(this));
   },
 
-  getTargetTemperature: function(callback) {
-    this.log("[+] getTargetTemperature from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
-    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting targetTemperature: %s", error.message);
-  				callback(error);
-        } else {
-  				var json = JSON.parse(responseBody);
-  				this.targetTemperature = parseFloat(json.targetTemperature);
-  				this.log("[*] targetTemperature: %s", this.targetTemperature);
-  				callback(null, this.targetTemperature);
-        }
+  setTargetHeatingCoolingState: function (value, callback) {
+    this.log('[+] setTargetHeatingCoolingState from %s to %s', this.targetHeatingCoolingState, value);
+    const url   = this.apiroute + '/device/set_away';
+    const state = value === 0 || value === 2 ? 1 : 0;
+    this._httpRequest(url, JSON.stringify({
+      user_uuid:   this.user_uuid,
+      device_uuid: this.device_uuid,
+      away:        state,
+    }), 'POST', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error setting targetHeatingCoolingState: %s', error.message);
+        callback(error);
+      } else {
+        this.log('[*] Sucessfully set targetHeatingCoolingState to %s', state);
+        this.targetHeatingCoolingState = state;
+        this.service.setCharacteristic(Characteristic.CurrentHeatingCoolingState, state);
+        callback();
+      }
     }.bind(this));
   },
 
-  setTargetTemperature: function(value, callback) {
-    this.log("[+] setTargetTemperature from %s to %s", this.targetTemperature, value);
-    var url = this.apiroute+"/targetTemperature/"+value;
+  getCurrentTemperature: function (callback) {
+    this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error setting targetTemperature", error.message);
-  				callback(error);
-        } else {
-          this.log("[*] Sucessfully set targetTemperature to %s", value);
-  				callback();
-        }
+      if (error) {
+        this.log('[!] Error getting currentTemperature: %s', error.message);
+        callback(error);
+      } else {
+        const json              = JSON.parse(responseBody);
+        const device            = this._findDevice(json);
+        const roomsensor        = _.first(device.roomsensors);
+        const temperature       = roomsensor.temperature;
+        this.currentTemperature = parseFloat(temperature);
+
+        this.log('[*] currentTemperature: %s', this.currentTemperature);
+        callback(null, this.currentTemperature);
+      }
     }.bind(this));
   },
 
-  getCurrentRelativeHumidity: function(callback) {
-    this.log("[+] getCurrentRelativeHumidity from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
+  getTargetTemperature: function (callback) {
+    this.log('[+] getTargetTemperature from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting currentRelativeHumidity: %s", error.message);
-  				callback(error);
-        } else {
-  				var json = JSON.parse(responseBody);
-  				this.currentRelativeHumidity = parseFloat(json.currentRelativeHumidity);
-  				this.log("[*] currentRelativeHumidity: %s", this.currentRelativeHumidity);
-  				callback(null, this.currentRelativeHumidity);
-        }
+      if (error) {
+        this.log('[!] Error getting targetTemperature: %s', error.message);
+        callback(error);
+      } else {
+        const json                 = JSON.parse(responseBody);
+        const device               = this._findDevice(json);
+        const roomsensor           = _.first(device.roomsensors);
+        const setpoint_temperature = roomsensor.setpoint_temperature;
+        this.targetTemperature     = parseFloat(setpoint_temperature);
+
+        this.log('[*] targetTemperature: %s', this.targetTemperature);
+        callback(null, this.targetTemperature);
+      }
     }.bind(this));
   },
 
-  getTargetRelativeHumidity: function(callback) {
-    this.log("[+] getTargetRelativeHumidity from:", this.apiroute+"/status");
-    var url = this.apiroute+"/status";
-    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error getting targetRelativeHumidity: %s", error.message);
-  				callback(error);
-        } else {
-  				var json = JSON.parse(responseBody);
-  				this.targetRelativeHumidity = parseFloat(json.targetRelativeHumidity);
-  				this.log("[*] targetRelativeHumidity: %s", this.targetRelativeHumidity);
-  				callback(null, this.targetRelativeHumidity);
-        }
+  setTargetTemperature: function (value, callback) {
+    this.log('[+] setTargetTemperature from %s to %s', this.targetTemperature, value);
+    const url = this.apiroute + '/device/set_target_temp';
+    this._httpRequest(url, JSON.stringify({
+      user_uuid:   this.user_uuid,
+      device_uuid: this.device_uuid,
+      target_temp: value,
+    }), 'POST', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error setting targetTemperature', error.message);
+        callback(error);
+      } else {
+        this.log('[*] Sucessfully set targetTemperature to %s', value);
+        callback();
+      }
     }.bind(this));
   },
 
-  setTargetRelativeHumidity: function(value, callback) {
-    this.log("[+] setTargetRelativeHumidity from %s to %s", this.targetRelativeHumidity, value);
-    var url = this.apiroute+"/targetRelativeHumidity/"+value;
+  getCurrentRelativeHumidity: function (callback) {
+    this.log('[+] getCurrentRelativeHumidity from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
-        if (error) {
-          this.log("[!] Error setting targetRelativeHumidity", error.message);
-  				callback(error);
-        } else {
-          this.log("[*] Sucessfully set targetRelativeHumidity to %s", value);
-  				callback();
-        }
+      if (error) {
+        this.log('[!] Error getting currentRelativeHumidity: %s', error.message);
+        callback(error);
+      } else {
+        const json                   = JSON.parse(responseBody);
+        const device                 = this._findDevice(json);
+        const roomsensor             = _.first(device.roomsensors);
+        const humidity               = roomsensor.humidity;
+        this.currentRelativeHumidity = parseFloat(humidity);
+
+        this.log('[*] currentRelativeHumidity: %s', this.currentRelativeHumidity);
+        callback(null, this.currentRelativeHumidity);
+      }
     }.bind(this));
   },
 
-	getTemperatureDisplayUnits: function(callback) {
-		//this.log("getTemperatureDisplayUnits:", this.temperatureDisplayUnits);
-		callback(null, this.temperatureDisplayUnits);
-	},
+  getTargetRelativeHumidity: function (callback) {
+    this.log('[+] getTargetRelativeHumidity from:', this.apiroute + '/list');
+    const url = this.apiroute + '/list';
+    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error getting targetRelativeHumidity: %s', error.message);
+        callback(error);
+      } else {
+        const json                  = JSON.parse(responseBody);
+        const device                = this._findDevice(json);
+        const roomsensor            = _.first(device.roomsensors);
+        const humidity              = roomsensor.humidity;
+        this.targetRelativeHumidity = parseFloat(humidity);
 
-  setTemperatureDisplayUnits: function(value, callback) {
-		this.log("[*] setTemperatureDisplayUnits from %s to %s", this.temperatureDisplayUnits, value);
-		this.temperatureDisplayUnits = value;
-		callback();
-	},
+        this.log('[*] targetRelativeHumidity: %s', this.targetRelativeHumidity);
+        callback(null, this.targetRelativeHumidity);
+      }
+    }.bind(this));
+  },
 
-	getName: function(callback) {
-		this.log("getName :", this.name);
-		callback(null, this.name);
-	},
+  setTargetRelativeHumidity: function (value, callback) {
+    callback(new Error('Not Supported'));
+  },
 
-	getServices: function() {
+  getTemperatureDisplayUnits: function (callback) {
+    //this.log("getTemperatureDisplayUnits:", this.temperatureDisplayUnits);
+    callback(null, this.temperatureDisplayUnits);
+  },
 
-		this.informationService = new Service.AccessoryInformation();
+  setTemperatureDisplayUnits: function (value, callback) {
+    this.log('[*] setTemperatureDisplayUnits from %s to %s', this.temperatureDisplayUnits, value);
+    callback();
+  },
+
+  getName: function (callback) {
+    this.log('getName :', this.name);
+    callback(null, this.name);
+  },
+
+  getServices: function () {
+
+    this.informationService = new Service.AccessoryInformation();
     this.informationService
-		  .setCharacteristic(Characteristic.Manufacturer, this.manufacturer)
-		  .setCharacteristic(Characteristic.Model, this.model)
-		  .setCharacteristic(Characteristic.SerialNumber, this.serial);
+        .setCharacteristic(Characteristic.Manufacturer, this.manufacturer)
+        .setCharacteristic(Characteristic.Model, this.model)
+        .setCharacteristic(Characteristic.SerialNumber, this.serial);
 
-		this.service
-			.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-			.on('get', this.getCurrentHeatingCoolingState.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+        .on('get', this.getCurrentHeatingCoolingState.bind(this));
 
-		this.service
-			.getCharacteristic(Characteristic.TargetHeatingCoolingState)
-			.on('get', this.getTargetHeatingCoolingState.bind(this))
-			.on('set', this.setTargetHeatingCoolingState.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.TargetHeatingCoolingState)
+        .on('get', this.getTargetHeatingCoolingState.bind(this))
+        .on('set', this.setTargetHeatingCoolingState.bind(this));
 
-		this.service
-			.getCharacteristic(Characteristic.CurrentTemperature)
-			.on('get', this.getCurrentTemperature.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .on('get', this.getCurrentTemperature.bind(this));
 
-		this.service
-			.getCharacteristic(Characteristic.TargetTemperature)
-			.on('get', this.getTargetTemperature.bind(this))
-			.on('set', this.setTargetTemperature.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.TargetTemperature)
+        .on('get', this.getTargetTemperature.bind(this))
+        .on('set', this.setTargetTemperature.bind(this));
 
-		this.service
-			.getCharacteristic(Characteristic.TemperatureDisplayUnits)
-			.on('get', this.getTemperatureDisplayUnits.bind(this))
-      .on('set', this.setTemperatureDisplayUnits.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        .on('get', this.getTemperatureDisplayUnits.bind(this))
+        .on('set', this.setTemperatureDisplayUnits.bind(this));
 
-		this.service
-			.getCharacteristic(Characteristic.Name)
-			.on('get', this.getName.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.Name)
+        .on('get', this.getName.bind(this));
 
     if (this.currentHumidity) {
       this.service
-			  .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-			  .on('get', this.getCurrentRelativeHumidity.bind(this));
+          .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+          .on('get', this.getCurrentRelativeHumidity.bind(this));
     }
 
     if (this.targetHumidity) {
       this.service
-        .getCharacteristic(Characteristic.TargetRelativeHumidity)
-        .on('get', this.getTargetRelativeHumidity.bind(this))
-        .on('set', this.setTargetRelativeHumidity.bind(this));
+          .getCharacteristic(Characteristic.TargetRelativeHumidity)
+          .on('get', this.getTargetRelativeHumidity.bind(this))
+          .on('set', this.setTargetRelativeHumidity.bind(this));
     }
 
-		this.service.getCharacteristic(Characteristic.CurrentTemperature)
-			.setProps({
-				minValue: this.minTemp,
-				maxValue: this.maxTemp,
-				minStep: 1
-			});
+    this.service.getCharacteristic(Characteristic.CurrentTemperature)
+        .setProps({
+          minValue: this.minTemp,
+          maxValue: this.maxTemp,
+          minStep:  this.minStep,
+        });
 
-		this.service.getCharacteristic(Characteristic.TargetTemperature)
-			.setProps({
-				minValue: this.minTemp,
-				maxValue: this.maxTemp,
-				minStep: 1
-			});
-		return [this.informationService, this.service];
-	}
+    this.service.getCharacteristic(Characteristic.TargetTemperature)
+        .setProps({
+          minValue: this.minTemp,
+          maxValue: this.maxTemp,
+          minStep:  this.minStep,
+        });
+    return [this.informationService, this.service];
+  },
 };
