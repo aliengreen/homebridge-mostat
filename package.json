@@ -1,13 +1,13 @@
 {
   "name": "homebridge-mostat",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "https://aliengreen.ge/en Mostat's bridget to homekit",
   "license": "ISC",
   "keywords": [
     "homebridge-plugin",
+    "homekit",
     "aliengreen",
-    "mostat",
-    "homekit"
+    "mostat"
   ],
   "engines": {
     "node": ">=0.12.0",
