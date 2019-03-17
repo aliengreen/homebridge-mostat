@@ -118,7 +118,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting currentHeatingCoolingState: %s', error.message);
         callback(error);
       } else {
-        const json                      = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device                    = this._findDevice(json);
         const relay                     = device.boiler.relay;
         const state                     = relay === 1 ? 2 : 0;
@@ -138,7 +141,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting targetHeatingCoolingState: %s', error.message);
         callback(error);
       } else {
-        const json                      = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device                    = this._findDevice(json);
         const relay                     = device.boiler.relay;
         const state                     = relay === 1 ? 1 : 0;
@@ -178,7 +184,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting currentTemperature: %s', error.message);
         callback(error);
       } else {
-        const json              = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device            = this._findDevice(json);
         const roomsensor        = _.first(device.roomsensors);
         const temperature       = roomsensor.temperature;
@@ -198,7 +207,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting targetTemperature: %s', error.message);
         callback(error);
       } else {
-        const json                 = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device               = this._findDevice(json);
         const roomsensor           = _.first(device.roomsensors);
         const setpoint_temperature = roomsensor.setpoint_temperature;
@@ -236,7 +248,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting currentRelativeHumidity: %s', error.message);
         callback(error);
       } else {
-        const json                   = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device                 = this._findDevice(json);
         const roomsensor             = _.first(device.roomsensors);
         const humidity               = roomsensor.humidity;
@@ -256,7 +271,10 @@ Thermostat.prototype = {
         this.log('[!] Error getting targetRelativeHumidity: %s', error.message);
         callback(error);
       } else {
-        const json                  = JSON.parse(responseBody);
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
         const device                = this._findDevice(json);
         const roomsensor            = _.first(device.roomsensors);
         const humidity              = roomsensor.humidity;
