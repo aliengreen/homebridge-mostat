@@ -178,7 +178,8 @@ Thermostat.prototype = {
 
   getCurrentTemperature: function (callback) {
     this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
-    const url = this.apiroute + '/list';
+    const url  = this.apiroute + '/list';
+    const self = this;
     this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
       if (error) {
         this.log('[!] Error getting currentTemperature: %s', error.message);
@@ -188,13 +189,14 @@ Thermostat.prototype = {
         if (_.isString(responseBody)) {
           json = JSON.parse(responseBody);
         }
-        const device            = this._findDevice(json);
+        const device = self._findDevice(json);
+        self.service.setCharacteristic(Characteristic.Name, self.name);
         const roomsensor        = _.first(device.roomsensors);
         const temperature       = roomsensor.temperature;
-        this.currentTemperature = parseFloat(temperature);
+        self.currentTemperature = parseFloat(temperature);
 
-        this.log('[*] currentTemperature: %s', this.currentTemperature);
-        callback(null, this.currentTemperature);
+        self.log('[*] currentTemperature: %s', self.currentTemperature);
+        callback(null, self.currentTemperature);
       }
     }.bind(this));
   },

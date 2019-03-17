@@ -14,7 +14,7 @@
 "accessories": [
     {
         "accessory": "mostat",
-        "name":"Mostat Loading…",
+        "name":"Mostat name",
         "access_token": "bearer token",
         "device_uuid":"eui64"
     }
