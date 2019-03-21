@@ -43,6 +43,9 @@ function Thermostat(log, config) {
   this.log(this.name, this.apiroute);
 
   this.service = new Service.Thermostat(this.name);
+  this.humidty = new Service.HumiditySensor(this.name + ' Humidity');
+  this.battery = new Service.BatteryService(this.name + ' Room Sensor Battery');
+
 }
 
 Thermostat.prototype = {
@@ -73,7 +76,7 @@ Thermostat.prototype = {
         url:     url,
         body:    body,
         method:  method,
-        timeout: 1000,
+        timeout: 400,
         headers: {
           'User-Agent':    'Mostat Homekit',
           'Content-Type':  'application/json',
@@ -147,7 +150,7 @@ Thermostat.prototype = {
         }
         const device                    = this._findDevice(json);
         const relay                     = device.boiler.relay;
-        const state                     = relay === 1 ? 1 : 0;
+        const state                     = relay === 1 ? 2 : 0;
         this.currentHeatingCoolingState = state;
         this.log('[*] targetHeatingCoolingState: %s', this.currentHeatingCoolingState);
         callback(null, this.targetHeatingCoolingState);
@@ -158,7 +161,7 @@ Thermostat.prototype = {
   setTargetHeatingCoolingState: function (value, callback) {
     this.log('[+] setTargetHeatingCoolingState from %s to %s', this.targetHeatingCoolingState, value);
     const url   = this.apiroute + '/device/set_away';
-    const state = value === 0 || value === 2 ? 1 : 0;
+    const state = value === 0 || value === 2 ? 2 : 0;
     this._httpRequest(url, JSON.stringify({
       user_uuid:   this.user_uuid,
       device_uuid: this.device_uuid,
@@ -190,7 +193,7 @@ Thermostat.prototype = {
           json = JSON.parse(responseBody);
         }
         const device = self._findDevice(json);
-        self.service.setCharacteristic(Characteristic.Name, self.name);
+        self.service.getCharacteristic(Characteristic.Name).setValue(self.name);
         const roomsensor        = _.first(device.roomsensors);
         const temperature       = roomsensor.temperature;
         self.currentTemperature = parseFloat(temperature);
@@ -302,6 +305,53 @@ Thermostat.prototype = {
     callback();
   },
 
+  getBatteryLevel: function (callback) {
+    this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
+    const url  = this.apiroute + '/list';
+    const self = this;
+    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error getting currentTemperature: %s', error.message);
+        callback(error);
+      } else {
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
+        const device       = self._findDevice(json);
+        const roomsensor   = _.first(device.roomsensors);
+        const batteryLevel = roomsensor.battery_level;
+        self.batteryLevel  = parseFloat(batteryLevel);
+
+        self.log('[*] batteryLevel: %s', self.batteryLevel);
+        callback(null, self.batteryLevel);
+      }
+    }.bind(this));
+  },
+
+  getBatteryCondition: function (callback) {
+    this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
+    const url  = this.apiroute + '/list';
+    const self = this;
+    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error getting currentTemperature: %s', error.message);
+        callback(error);
+      } else {
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
+        const device          = self._findDevice(json);
+        const roomsensor      = _.first(device.roomsensors);
+        self.batteryCondition = roomsensor.battery_condition === 'replace soon' || roomsensor.battery_condition === 'replace' ? 1 : 0;
+
+        self.log('[*] batteryLevel: %s', self.batteryCondition);
+        callback(null, self.batteryCondition);
+      }
+    }.bind(this));
+  },
+
   getName: function (callback) {
     this.log('getName :', this.name);
     callback(null, this.name);
@@ -368,6 +418,23 @@ Thermostat.prototype = {
           maxValue: this.maxTemp,
           minStep:  this.minStep,
         });
-    return [this.informationService, this.service];
+
+    this.humidty
+        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+        .on('get', this.getCurrentRelativeHumidity.bind(this));
+
+    this.battery
+        .getCharacteristic(Characteristic.BatteryLevel)
+        .on('get', this.getBatteryLevel.bind(this));
+
+    this.battery
+        .getCharacteristic(Characteristic.ChargingState)
+        .on('get', cb => cb(Characteristic.ChargingState.NOT_CHARGEABLE));
+
+    this.battery
+        .getCharacteristic(Characteristic.StatusLowBattery)
+        .on('get', this.getBatteryCondition.bind(this));
+
+    return [this.informationService, this.service, this.humidty, this.battery];
   },
 };

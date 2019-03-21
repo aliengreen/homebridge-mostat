@@ -1,6 +1,6 @@
 {
   "name": "homebridge-mostat",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "https://aliengreen.ge/en Mostat's bridget to homekit",
   "license": "ISC",
   "keywords": [
