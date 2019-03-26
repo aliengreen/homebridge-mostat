@@ -84,7 +84,7 @@ Thermostat.prototype = {
         },
       },
       function (error, response, body) {
-        if (url === 'https://app.aliengreen.ge/api/list') {
+        if (!error && url === 'https://app.aliengreen.ge/api/list') {
           self.mostat_cache['list_cache'] = body;
 
           if (_.isEmpty(self.user_uuid)) {
