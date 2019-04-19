@@ -45,6 +45,7 @@ function Thermostat(log, config) {
   this.service = new Service.Thermostat(this.name);
   this.humidty = new Service.HumiditySensor(this.name + ' Humidity');
   this.battery = new Service.BatteryService(this.name + ' Room Sensor Battery');
+  this.outside = new Service.TemperatureSensor(this.name + ' Outside Temperature');
 
 }
 
@@ -76,7 +77,7 @@ Thermostat.prototype = {
         url:     url,
         body:    body,
         method:  method,
-        timeout: 400,
+        timeout: 1000,
         headers: {
           'User-Agent':    'Mostat Homekit',
           'Content-Type':  'application/json',
@@ -196,6 +197,31 @@ Thermostat.prototype = {
         self.service.getCharacteristic(Characteristic.Name).setValue(self.name);
         const roomsensor        = _.first(device.roomsensors);
         const temperature       = roomsensor.temperature;
+        self.currentTemperature = parseFloat(temperature);
+
+        self.log('[*] currentTemperature: %s', self.currentTemperature);
+        callback(null, self.currentTemperature);
+      }
+    }.bind(this));
+  },
+
+
+  getOutsideTemperature: function (callback) {
+    this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
+    const url  = this.apiroute + '/list';
+    const self = this;
+    this._httpRequest(url, '', 'GET', function (error, response, responseBody) {
+      if (error) {
+        this.log('[!] Error getting currentTemperature: %s', error.message);
+        callback(error);
+      } else {
+        let json = responseBody;
+        if (_.isString(responseBody)) {
+          json = JSON.parse(responseBody);
+        }
+        const device = self._findDevice(json);
+        self.service.getCharacteristic(Characteristic.Name).setValue(self.name);
+        const temperature       = device.outside.temperature;
         self.currentTemperature = parseFloat(temperature);
 
         self.log('[*] currentTemperature: %s', self.currentTemperature);
@@ -435,6 +461,12 @@ Thermostat.prototype = {
         .getCharacteristic(Characteristic.StatusLowBattery)
         .on('get', this.getBatteryCondition.bind(this));
 
-    return [this.informationService, this.service, this.humidty, this.battery];
+
+    this.outside
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .on('get', this.getOutsideTemperature.bind(this));
+
+
+    return [this.informationService, this.service, this.humidty, this.outside, this.battery];
   },
 };
