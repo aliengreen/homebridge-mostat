@@ -44,7 +44,7 @@ function Thermostat(log, config) {
   this.log(this.name, this.apiroute);
 
   if(this.thermometer) {
-    this.service = new Service.TemperatureSensor(this.name);
+    this.service = new Service.TemperatureSensor(this.name + ' Temperature');
   } else {
     this.service = new Service.Thermostat(this.name);
   }
