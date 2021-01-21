@@ -18,6 +18,9 @@ function Thermostat(log, config) {
   this.device_uuid  = config['device_uuid'];
   this.name         = config['name'];
   this.thermometer  = parseInt(config['thermometer']) === 1;
+  this.hasOutside   = parseInt(config['outside']) === 1;
+  this.outsideOnly  = parseInt(config['outside_only']) === 1;
+  this.hasBattery   = parseInt(config['battery']) === 1;
 
   this.mostat_cache = {};
 
@@ -42,16 +45,25 @@ function Thermostat(log, config) {
   this.heatingCoolingState       = 1;
 
   this.log(this.name, this.apiroute);
+  this.log(this.outsideOnly);
 
-  if(this.thermometer) {
-    this.service = new Service.TemperatureSensor(this.name + ' Temperature');
+  if (this.thermometer) {
+    this.service = new Service.TemperatureSensor(this.name);
+  } else if (this.outsideOnly) {
+
   } else {
     this.service = new Service.Thermostat(this.name);
   }
-  this.humidty = new Service.HumiditySensor(this.name + ' Humidity');
-  this.battery = new Service.BatteryService(this.name + ' Room Sensor Battery');
-  this.outside = new Service.TemperatureSensor(this.name + ' Outside Temperature');
 
+  if (this.hasOutside) {
+    this.outside = new Service.TemperatureSensor(this.name + ' Outside Temperature');
+  }
+
+  this.humidty = new Service.HumiditySensor(this.name + ' Humidity');
+
+  if (this.hasBattery) {
+    this.battery = new Service.BatteryService(this.name + ' Room Sensor Battery');
+  }
 }
 
 Thermostat.prototype = {
@@ -210,7 +222,6 @@ Thermostat.prototype = {
     }.bind(this));
   },
 
-
   getOutsideTemperature: function (callback) {
     this.log('[+] getCurrentTemperature from:', this.apiroute + '/list');
     const url  = this.apiroute + '/list';
@@ -225,7 +236,9 @@ Thermostat.prototype = {
           json = JSON.parse(responseBody);
         }
         const device = self._findDevice(json);
-        self.service.getCharacteristic(Characteristic.Name).setValue(self.name);
+        if(!this.outsideOnly) {
+          self.service.getCharacteristic(Characteristic.Name).setValue(self.name);
+        }
         const temperature       = device.outside.temperature;
         self.currentTemperature = parseFloat(temperature);
 
@@ -392,15 +405,15 @@ Thermostat.prototype = {
 
     this.informationService = new Service.AccessoryInformation();
     this.informationService
-        .setCharacteristic(Characteristic.Manufacturer, this.manufacturer)
-        .setCharacteristic(Characteristic.Model, this.model)
-        .setCharacteristic(Characteristic.SerialNumber, this.serial);
+      .setCharacteristic(Characteristic.Manufacturer, this.manufacturer)
+      .setCharacteristic(Characteristic.Model, this.model)
+      .setCharacteristic(Characteristic.SerialNumber, this.serial);
 
-    if(this.thermometer) {
+    if (this.thermometer) {
       this.service
         .getCharacteristic(Characteristic.CurrentTemperature)
         .on('get', this.getCurrentTemperature.bind(this));
-    } else {
+    } else if (this.outsideOnly) {} else {
       this.service
         .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
         .on('get', this.getCurrentHeatingCoolingState.bind(this));
@@ -427,57 +440,69 @@ Thermostat.prototype = {
       this.service
         .getCharacteristic(Characteristic.Name)
         .on('get', this.getName.bind(this));
-    }
 
-    if (this.currentHumidity) {
-      this.service
+
+      if (this.currentHumidity) {
+        this.service
           .getCharacteristic(Characteristic.CurrentRelativeHumidity)
           .on('get', this.getCurrentRelativeHumidity.bind(this));
-    }
+      }
 
-    if (this.targetHumidity) {
-      this.service
+      if (this.targetHumidity) {
+        this.service
           .getCharacteristic(Characteristic.TargetRelativeHumidity)
           .on('get', this.getTargetRelativeHumidity.bind(this))
           .on('set', this.setTargetRelativeHumidity.bind(this));
+      }
+
+      this.service.getCharacteristic(Characteristic.CurrentTemperature)
+        .setProps({
+          minValue: this.minTemp,
+          maxValue: this.maxTemp,
+          minStep:  this.minStep,
+        });
+
+      this.service.getCharacteristic(Characteristic.TargetTemperature)
+        .setProps({
+          minValue: this.minTemp,
+          maxValue: this.maxTemp,
+          minStep:  this.minStep,
+        });
     }
 
-    this.service.getCharacteristic(Characteristic.CurrentTemperature)
-        .setProps({
-          minValue: this.minTemp,
-          maxValue: this.maxTemp,
-          minStep:  this.minStep,
-        });
-
-    this.service.getCharacteristic(Characteristic.TargetTemperature)
-        .setProps({
-          minValue: this.minTemp,
-          maxValue: this.maxTemp,
-          minStep:  this.minStep,
-        });
-
     this.humidty
-        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-        .on('get', this.getCurrentRelativeHumidity.bind(this));
+      .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+      .on('get', this.getCurrentRelativeHumidity.bind(this));
 
-    this.battery
-        .getCharacteristic(Characteristic.BatteryLevel)
-        .on('get', this.getBatteryLevel.bind(this));
+    let _services = [this.informationService, this.service, this.humidty];
 
-    this.battery
-        .getCharacteristic(Characteristic.ChargingState)
-        .on('get', cb => cb(Characteristic.ChargingState.NOT_CHARGEABLE));
-
-    this.battery
-        .getCharacteristic(Characteristic.StatusLowBattery)
-        .on('get', this.getBatteryCondition.bind(this));
-
-
-    this.outside
+    if (this.hasOutside) {
+      this.outside
         .getCharacteristic(Characteristic.CurrentTemperature)
         .on('get', this.getOutsideTemperature.bind(this));
 
+      _services.push(this.outside);
+      if(this.outsideOnly) {
+        _services = [this.outside]
+      }
+    }
 
-    return [this.informationService, this.service, this.humidty, this.outside, this.battery];
+    if (this.hasBattery) {
+      this.battery
+        .getCharacteristic(Characteristic.BatteryLevel)
+        .on('get', this.getBatteryLevel.bind(this));
+
+      this.battery
+        .getCharacteristic(Characteristic.ChargingState)
+        .on('get', cb => cb(Characteristic.ChargingState.NOT_CHARGEABLE));
+
+      this.battery
+        .getCharacteristic(Characteristic.StatusLowBattery)
+        .on('get', this.getBatteryCondition.bind(this));
+
+      _services.push(this.battery);
+    }
+
+    return _services;
   },
 };
