@@ -1,6 +1,6 @@
 {
   "name": "homebridge-mostat",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "https://aliengreen.ge/en Mostat's bridget to homekit",
   "license": "ISC",
   "keywords": [
@@ -28,8 +28,7 @@
   },
   "homepage": "https://github.com/aliengreen/homebridge-mostat",
   "main": "index.js",
-  "devDependencies": {
-  },
+  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   }

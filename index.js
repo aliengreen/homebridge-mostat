@@ -17,6 +17,7 @@ function Thermostat(log, config) {
   this.access_token = config['access_token'];
   this.device_uuid  = config['device_uuid'];
   this.name         = config['name'];
+  this.thermometer  = parseInt(config['thermometer']) === 1;
 
   this.mostat_cache = {};
 
@@ -42,7 +43,11 @@ function Thermostat(log, config) {
 
   this.log(this.name, this.apiroute);
 
-  this.service = new Service.Thermostat(this.name);
+  if(this.thermometer) {
+    this.service = new Service.TemperatureSensor(this.name);
+  } else {
+    this.service = new Service.Thermostat(this.name);
+  }
   this.humidty = new Service.HumiditySensor(this.name + ' Humidity');
   this.battery = new Service.BatteryService(this.name + ' Room Sensor Battery');
   this.outside = new Service.TemperatureSensor(this.name + ' Outside Temperature');
@@ -391,32 +396,38 @@ Thermostat.prototype = {
         .setCharacteristic(Characteristic.Model, this.model)
         .setCharacteristic(Characteristic.SerialNumber, this.serial);
 
-    this.service
+    if(this.thermometer) {
+      this.service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .on('get', this.getCurrentTemperature.bind(this));
+    } else {
+      this.service
         .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
         .on('get', this.getCurrentHeatingCoolingState.bind(this));
 
-    this.service
+      this.service
         .getCharacteristic(Characteristic.TargetHeatingCoolingState)
         .on('get', this.getTargetHeatingCoolingState.bind(this))
         .on('set', this.setTargetHeatingCoolingState.bind(this));
 
-    this.service
+      this.service
         .getCharacteristic(Characteristic.CurrentTemperature)
         .on('get', this.getCurrentTemperature.bind(this));
 
-    this.service
+      this.service
         .getCharacteristic(Characteristic.TargetTemperature)
         .on('get', this.getTargetTemperature.bind(this))
         .on('set', this.setTargetTemperature.bind(this));
 
-    this.service
+      this.service
         .getCharacteristic(Characteristic.TemperatureDisplayUnits)
         .on('get', this.getTemperatureDisplayUnits.bind(this))
         .on('set', this.setTemperatureDisplayUnits.bind(this));
 
-    this.service
+      this.service
         .getCharacteristic(Characteristic.Name)
         .on('get', this.getName.bind(this));
+    }
 
     if (this.currentHumidity) {
       this.service
